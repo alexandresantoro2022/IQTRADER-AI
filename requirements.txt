@@ -1,0 +1,5 @@
+iqoptionapi
+requests
+numpy
+scikit-learn
+joblib
