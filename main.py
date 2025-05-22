@@ -10,7 +10,9 @@ from iqoptionapi.stable_api import IQ_Option
 # ========== CONFIGURAÇÕES ==========
 EMAIL = "alexandresantoroalves@hotmail.com"
 SENHA = "A1l2e3-*@"
-ATIVOS = ["EURGBP-OTC", "EURUSD-OTC", "GBPUSD-OTC", "USDJPY-OTC"]
+# ========== ATIVOS ==========
+# Busca dinâmicamente todos os ativos digitais disponíveis via API
+ATIVOS = []  # será preenchido em tempo de execução
 TIPO_CONTA = "REAL"
 VALOR_INICIAL = 5           # Valor de entrada em BRL
 EXPIRACAO = 1               # Expiração em minutos
@@ -23,8 +25,22 @@ PERIOD_EMAC = 34
 PERIOD_EMAD = 89
 
 # ========== TELEGRAM ==========
-TELEGRAM_TOKEN = "6658940055:AAF33sglHPsVkKeqJuyckctjq__Wf5oSGeg"
-CHAT_ID = "-1002110710539"
+
+# ========= BUSCA DINÂMICA DE ATIVOS ==========
+def pegar_ativos_disponiveis(api):
+    """Retorna lista de códigos de todos os ativos digitais disponíveis."""
+    try:
+        data = api.get_all_profit()
+        activos = list(data.get('digital', {}).keys())
+        print(f"[INFO] Ativos digitais disponíveis: {activos}")
+        return activos
+    except Exception as e:
+        print(f"[ERROR] Não foi possível buscar ativos: {e}")
+        return []
+
+# ========== TELEGRAM ==========
+TELEGRAM_TOKEN = "6658940055:AAF33sglHPsVkKeqJuyckctjq__Ff5oSGeg"
+CHAT_ID = "-1002664609130"
 
 # ========== MODELO DE IA ==========
 try:
@@ -175,6 +191,13 @@ def main():
         enviar_telegram("❌ Erro conexão")
         return
     api.change_balance(TIPO_CONTA)
+    # Preenche lista de ativos dinamicamente
+    ativos_disponiveis = pegar_ativos_disponiveis(api)
+    if not ativos_disponiveis:
+        enviar_telegram("⚠️ Nenhum ativo digital disponível encontrado; saindo.")
+        return
+    global ATIVOS
+    ATIVOS = ativos_disponiveis
     enviar_telegram(f"✅ Sala AI Iniciada - {TIPO_CONTA}")
     while True:
         for ativo in ATIVOS:
