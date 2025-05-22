@@ -23,7 +23,7 @@ PERIOD_EMAC = 34
 PERIOD_EMAD = 89
 
 # ========== TELEGRAM ==========
-TELEGRAM_TOKEN = "6658940055:AAF33sglHPsVkKeqJuyckctjq__Ff5oSGeg"
+TELEGRAM_TOKEN = "6658940055:AAF33sglHPsVkKeqJuyckctjq__Wf5oSGeg"
 CHAT_ID = "-1002110710539"
 
 # ========== MODELO DE IA ==========
