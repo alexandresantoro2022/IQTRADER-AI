@@ -24,8 +24,7 @@ PERIOD_EMAB = 13
 PERIOD_EMAC = 34
 PERIOD_EMAD = 89
 
-TELEGRAM_TOKEN = "6658940055:AAF33sglHPsVkKeqJuyckctjq__Ff5oSGeg"
-CHAT_ID = "-1002110710539"
+# ========== TELEGRAM ==========
 
 # ========= BUSCA DINÂMICA DE ATIVOS ==========
 def pegar_ativos_disponiveis(api):
@@ -75,27 +74,38 @@ def enviar_telegram(msg):
 def esta_aberto(api, ativo):
     """
     Verifica se o ativo está aberto para negociação no momento atual.
-    Ajusta nomes e mostra sessões para debug se necessário.
+    Ajusta timestamps em ms/seg e mostra sessões para debug.
     """
     try:
         all_times = api.get_all_open_time()
-        now = int(time.time())
+        now_sec = time.time()
         for item in all_times.get('result', []):
             name = item.get('name')
-            # compara exatamente o código do ativo
             if name != ativo:
                 continue
-            # percorre sessões
             sessions = item.get('sessions', [])
-            print(f"[SESSIONS] Ativo={ativo}, sessões={sessions}")
+            print(f"[SESSIONS] {ativo}: {sessions}")
             for session in sessions:
-                # API pode usar chaves 'open' e 'close' ou 'start_timestamp'/'end_timestamp'
-                start = session.get('open') or session.get('start_timestamp')
-                end = session.get('close') or session.get('end_timestamp')
-                print(f"[SESSION] {ativo}: start={start}, end={end}, now={now}")
-                if start and end and start <= now <= end:
+                # API pode retornar ms ou sec
+                start = session.get('start_timestamp') or session.get('open')
+                end = session.get('end_timestamp') or session.get('close')
+                if start is None or end is None:
+                    continue
+                # corrige unidade ms->s
+                if start > 1e12:
+                    start /= 1000.0
+                if end > 1e12:
+                    end /= 1000.0
+                print(f"[SESSION] {ativo}: start={start:.0f}, end={end:.0f}, now={now_sec:.0f}")
+                if start <= now_sec <= end:
                     print(f"[OPEN] {ativo} está aberto")
                     return True
+            print(f"[CLOSED] {ativo} sem sessão ativa agora.")
+            return False
+    except Exception as e:
+        print(f"Erro checando horário aberto: {e}")
+    print(f"[WARNING] Ativo {ativo} não encontrado ou sem horários; assumindo aberto")
+    return True
             print(f"[CLOSED] {ativo} não está em nenhuma sessão ativa agora.")
             return False
     except Exception as e:
@@ -227,8 +237,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
