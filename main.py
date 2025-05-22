@@ -24,7 +24,8 @@ PERIOD_EMAB = 13
 PERIOD_EMAC = 34
 PERIOD_EMAD = 89
 
-# ========== TELEGRAM ==========
+TELEGRAM_TOKEN="658940055:AAF33sglHPsVkKeqJuyckctjq__Wf5oSGeg"
+CHAT_ID="-1002110710539"
 
 # ========= BUSCA DINÂMICA DE ATIVOS ==========
 def pegar_ativos_disponiveis(api):
