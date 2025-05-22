@@ -12,7 +12,7 @@ EMAIL = "alexandresantoroalves@hotmail.com"
 SENHA = "A1l2e3-*@"
 # ========== ATIVOS ==========
 # Busca dinâmicamente todos os ativos digitais disponíveis via API
-ATIVOS = ["USDJPY"]  # será preenchido em tempo de execução
+ATIVOS = []  # será preenchido em tempo de execução
 TIPO_CONTA = "REAL"
 VALOR_INICIAL = 5           # Valor de entrada em BRL
 EXPIRACAO = 1               # Expiração em minutos
@@ -24,8 +24,8 @@ PERIOD_EMAB = 13
 PERIOD_EMAC = 34
 PERIOD_EMAD = 89
 
-TELEGRAM_TOKEN="658940055:AAF33sglHPsVkKeqJuyckctjq__Wf5oSGeg"
-CHAT_ID="-1002110710539"
+TELEGRAM_TOKEN = "6658940055:AAF33sglHPsVkKeqJuyckctjq__Ff5oSGeg"
+CHAT_ID = "-1002110710539"
 
 # ========= BUSCA DINÂMICA DE ATIVOS ==========
 def pegar_ativos_disponiveis(api):
@@ -73,18 +73,36 @@ def enviar_telegram(msg):
 # Checa se ativo está aberto
 
 def esta_aberto(api, ativo):
+    """
+    Verifica se o ativo está aberto para negociação no momento atual.
+    Ajusta nomes e mostra sessões para debug se necessário.
+    """
     try:
         all_times = api.get_all_open_time()
         now = int(time.time())
         for item in all_times.get('result', []):
-            if item.get('name') == ativo:
-                for session in item.get('sessions', []):
-                    start, end = session.get('start_timestamp'), session.get('end_timestamp')
-                    if start <= now <= end:
-                        return True
+            name = item.get('name')
+            # compara exatamente o código do ativo
+            if name != ativo:
+                continue
+            # percorre sessões
+            sessions = item.get('sessions', [])
+            print(f"[SESSIONS] Ativo={ativo}, sessões={sessions}")
+            for session in sessions:
+                # API pode usar chaves 'open' e 'close' ou 'start_timestamp'/'end_timestamp'
+                start = session.get('open') or session.get('start_timestamp')
+                end = session.get('close') or session.get('end_timestamp')
+                print(f"[SESSION] {ativo}: start={start}, end={end}, now={now}")
+                if start and end and start <= now <= end:
+                    print(f"[OPEN] {ativo} está aberto")
+                    return True
+            print(f"[CLOSED] {ativo} não está em nenhuma sessão ativa agora.")
+            return False
     except Exception as e:
-        print("Erro checando horário aberto:", e)
-    return False
+        print(f"Erro checando horário aberto: {e}")
+    # se não encontrou o ativo, assume aberto
+    print(f"[WARNING] Não encontrou ativo {ativo} em get_all_open_time; assumindo aberto")
+    return True
 
 # Extrai 4 features para IA: EMAA, EMAB em close e EMAC, EMAD em HLC3
 def extrair_features(candles):
@@ -209,3 +227,8 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
+
+
