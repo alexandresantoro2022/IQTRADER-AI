@@ -30,6 +30,7 @@ CHAT_ID = "-1002664609130"
 try:
     model = joblib.load('model.pkl')
     ia_ativa = True
+    print("✅ IA carregada com sucesso.")
 except FileNotFoundError:
     ia_ativa = False
     print("⚠️ model.pkl não encontrado; IA desativada.")
@@ -43,10 +44,12 @@ estatisticas = {"wins":0, "losses":0, "sequencia_wins":0, "maior_sequencia":0}
 
 # ========== UTILITÁRIOS ==========
 def enviar_telegram(msg):
+    print(f"[TELEGRAM] {msg}")  # log no console
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     data = {"chat_id": CHAT_ID, "text": msg, "parse_mode": "Markdown"}
     try:
-        requests.post(url, json=data)
+        resp = requests.post(url, json=data)
+        print(f"[TELEGRAM_STATUS] {resp.status_code}")
     except Exception as e:
         print("Erro ao enviar telegram:", e)
 
@@ -62,8 +65,8 @@ def esta_aberto(api, ativo):
                     start, end = session.get('start_timestamp'), session.get('end_timestamp')
                     if start <= now <= end:
                         return True
-    except:
-        pass
+    except Exception as e:
+        print("Erro checando horário aberto:", e)
     return False
 
 # Extrai 4 features para IA: EMAA, EMAB em close e EMAC, EMAD em HLC3
@@ -78,39 +81,45 @@ def extrair_features(candles):
     f2 = ema(closes, PERIOD_EMAB)
     f3 = ema(hlc3, PERIOD_EMAC)
     f4 = ema(hlc3, PERIOD_EMAD)
+    print(f"[FEATURES] f1={f1:.4f}, f2={f2:.4f}, f3={f3:.4f}, f4={f4:.4f}")
     return np.array([f1, f2, f3, f4]).reshape(1, -1)
 
 # Analisa sinal com IA ou fallback simples
-
 def analisar_sinais(api, ativo):
     candles = api.get_candles(ativo, PERIODO_CANDLE, 100, time.time())
     candles.reverse()
     if ia_ativa:
         feats = extrair_features(candles)
         pred = model.predict(feats)[0]
+        print(f"[PREDICTION] {ativo} -> {pred}")
         return pred
-    # fallback: direção baseada em último candle
     last = candles[-1]
-    return "call" if last['close'] > last['open'] else "put"
+    fallback = "call" if last['close'] > last['open'] else "put"
+    print(f"[FALLBACK] {ativo} -> {fallback}")
+    return fallback
 
 # Verifica resultado após expiração
 def verificar_resultado(api, ativo, direcao):
+    print(f"[RESULT] esperando expiração de {EXPIRACAO}m para {ativo} {direcao}")
     time.sleep(EXPIRACAO*60)
     candle = api.get_candles(ativo, PERIODO_CANDLE, 1, time.time())[0]
-    return "win" if (direcao=="call" and candle['close']>candle['open']) or (direcao=="put" and candle['close']<candle['open']) else "loss"
+    result = "win" if (direcao=="call" and candle['close']>candle['open']) or (direcao=="put" and candle['close']<candle['open']) else "loss"
+    print(f"[RESULT] {ativo} {direcao} -> {result}")
+    return result
 
 # Envia sinal e executa ordem via API
 def enviar_sinal(api, ativo, direcao, gale):
     if not esta_aberto(api, ativo):
         enviar_telegram(f"⏰ {ativo} fechado; pulando.")
         return None
-    hora = (datetime.datetime.now()+datetime.timedelta(minutes=1)).strftime("%H:%M")
+    now_ts = datetime.datetime.now()
+    hora = (now_ts + datetime.timedelta(minutes=1)).strftime("%H:%M")
     tag = "🟢 ENTRADA" if gale==0 else f"🔁 GALE {gale}"
     enviar_telegram(f"{tag}\n🎯 Ativo: `{ativo}`\n📈 Direção: *{direcao.upper()}*\n🕒 Entrada: {hora}\n🌀 Expiração: {EXPIRACAO}min")
-    # tentativa de ordem
     for t in range(3):
         ok, resp = api.buy_digital_spot(ativo, VALOR_INICIAL, direcao, EXPIRACAO)
         msg = resp.get('message','') if isinstance(resp, dict) else ''
+        print(f"[ORDER] tentativa {t+1}, ok={ok}, msg={msg or resp}")
         if ok:
             enviar_telegram(f"🎫 Ordem ID: `{resp}`")
             break
@@ -128,6 +137,7 @@ def enviar_sinal(api, ativo, direcao, gale):
 
 # Processa sinal principal e gales
 def processar_sinal(api, ativo, direcao):
+    print(f"[PROCESS] iniciando para {ativo} {direcao}")
     r = enviar_sinal(api, ativo, direcao, 0)
     if r is None: return
     if r:
@@ -146,16 +156,20 @@ def processar_sinal(api, ativo, direcao):
             else:
                 estatisticas['losses']+=1; estatisticas['sequencia_wins']=0
                 if g==GALE_MAX: enviar_telegram("❌ *SINAL FINALIZADO COM LOSS TOTAL*")
-    st = (f"📊 *ESTATÍSTICAS*\n"
-          f"✅ Wins: {estatisticas['wins']}\n"
-          f"❌ Losses: {estatisticas['losses']}\n"
-          f"🔥 Seq: {estatisticas['sequencia_wins']}\n"
-          f"🏆 Max Seq: {estatisticas['maior_sequencia']}")
+    st = (
+        f"📊 *ESTATÍSTICAS*\n"
+        f"✅ Wins: {estatisticas['wins']}\n"
+        f"❌ Losses: {estatisticas['losses']}\n"
+        f"🔥 Seq: {estatisticas['sequencia_wins']}\n"
+        f"🏆 Max Seq: {estatisticas['maior_sequencia']}"
+    )
     enviar_telegram(st)
 
 # Main
 def main():
+    print(f"▶️ Iniciando bot em {datetime.datetime.now().isoformat()}")
     api = IQ_Option(EMAIL, SENHA)
+    print("[API] Conectando...")
     api.connect()
     if not api.check_connect():
         enviar_telegram("❌ Erro conexão")
