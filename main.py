@@ -24,7 +24,7 @@ PERIOD_EMAD = 89
 
 # ========== TELEGRAM ==========
 TELEGRAM_TOKEN = "6658940055:AAF33sglHPsVkKeqJuyckctjq__Ff5oSGeg"
-CHAT_ID = "-1002664609130"
+CHAT_ID = "-1002110710539"
 
 # ========== MODELO DE IA ==========
 try:
