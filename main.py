@@ -12,7 +12,7 @@ EMAIL = "alexandresantoroalves@hotmail.com"
 SENHA = "A1l2e3-*@"
 # ========== ATIVOS ==========
 # Busca dinâmicamente todos os ativos digitais disponíveis via API
-ATIVOS = []  # será preenchido em tempo de execução
+ATIVOS = ["USDJPY"]  # será preenchido em tempo de execução
 TIPO_CONTA = "REAL"
 VALOR_INICIAL = 5           # Valor de entrada em BRL
 EXPIRACAO = 1               # Expiração em minutos
