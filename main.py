@@ -1,10 +1,7 @@
 import os
-import sys
 import time
 import datetime
 import requests
-import joblib
-import numpy as np
 from iqoptionapi.stable_api import IQ_Option
 
 # ========== CONFIGURAÇÕES ==========
@@ -13,7 +10,7 @@ SENHA = "A1l2e3-*@"
 ATIVOS = ["EURGBP", "EURUSD", "GBPUSD", "USDJPY"]
 TIPO_CONTA = "REAL"
 VALOR_INICIAL = 5           # Valor de entrada em BRL
-EXPIRACAO = 1               # minutos
+EXPIRACAO = 1               # Expiração em minutos
 PERIODO_CANDLE = 60         # Duração do candle em segundos
 GALE_MAX = 1
 # Parâmetros de EMAs clássicos
@@ -23,7 +20,7 @@ PERIOD_EMAC = 34
 PERIOD_EMAD = 89
 
 # ========== TELEGRAM ==========
-TELEGRAM_TOKEN = "6658940055:AAF33sglHPsVkKeqJuyckctjq__Wf5oSGeg"
+TELEGRAM_TOKEN = "6658940055:AAF33sglHPsVkKeqJuyckctjq__Ff5oSGeg"
 CHAT_ID = "-1002664609130"
 
 def enviar_telegram(msg):
@@ -60,29 +57,28 @@ def analisar_sinais(api, ativo):
     open_ = opens[-1]
     close_1, open_1 = closes[-2], opens[-2]
     close_2, open_2 = closes[-3], opens[-3]
-    close_3 = closes[-4]
     high_1, low_1 = highs[-2], lows[-2]
 
-    bull = (close_1<open_1 and close>open_ and close>high_1 and close_2>=open_2)
-    bear = (close_1>open_1 and close<open_ and close<low_1 and close_2<=open_2)
-    if bull:
+    bull_engulfing = close_1 < open_1 and close > open_ and close > high_1 and close_2 >= open_2
+    bear_engulfing = close_1 > open_1 and close < open_ and close < low_1 and close_2 <= open_2
+    if bull_engulfing:
         return "call"
-    if bear:
+    if bear_engulfing:
         return "put"
     return None
 
 # ========== RESULTADO ==========
 def verificar_resultado(api, ativo, direcao):
-    time.sleep(EXPIRACAO*60)
+    time.sleep(EXPIRACAO * 60)
     c = api.get_candles(ativo, PERIODO_CANDLE, 1, time.time())[0]
-    return "win" if (direcao=="call" and c['close']>c['open']) or (direcao=="put" and c['close']<c['open']) else "loss"
+    return "win" if (direcao == "call" and c['close'] > c['open']) or (direcao == "put" and c['close'] < c['open']) else "loss"
 
 # ========== ENTRADA ==========
 def enviar_sinal(api, ativo, direcao, gale):
-    hora = (datetime.datetime.now()+datetime.timedelta(minutes=1)).strftime("%H:%M")
-    tag = "🟢 ENTRADA" if gale==0 else f"🔁 GALE {gale}"
+    hora = (datetime.datetime.now() + datetime.timedelta(minutes=1)).strftime("%H:%M")
+    tag = "🟢 ENTRADA" if gale == 0 else f"🔁 GALE {gale}"
     enviar_telegram(f"{tag}\n🎯 Ativo: `{ativo}`\n📈 Direção: *{direcao.upper()}*\n🕒 Entrada: {hora}\n🌀 Expiração: {EXPIRACAO}min")
-    for t in range(3):
+    for _ in range(3):
         ok, resp = api.buy_digital_spot(ativo, VALOR_INICIAL, direcao, EXPIRACAO)
         if ok:
             enviar_telegram(f"🎫 Ordem ID: `{resp}`")
@@ -92,14 +88,14 @@ def enviar_sinal(api, ativo, direcao, gale):
         enviar_telegram("⚠️ Falha ao executar ordem")
         return False
 
-    res = verificar_resultado(api, ativo, direcao)
-    enviar_telegram("✅ WIN" if res=="win" else "❌ LOSS")
-    return res=="win"
+    resultado = verificar_resultado(api, ativo, direcao)
+    enviar_telegram("✅ WIN" if resultado == "win" else "❌ LOSS")
+    return resultado == "win"
 
 # ========== FLUXO PRINCIPAL ==========
 def processar_sinal(api, ativo, direcao):
-    win = enviar_sinal(api, ativo, direcao, 0)
-    if win:
+    sucesso = enviar_sinal(api, ativo, direcao, 0)
+    if sucesso:
         enviar_telegram("✅ *SINAL FINALIZADO COM WIN*")
     else:
         enviar_telegram("❌ *SINAL FINALIZADO COM LOSS TOTAL*")
@@ -109,7 +105,7 @@ def main():
     api = IQ_Option(EMAIL, SENHA)
     api.connect()
     if not api.check_connect():
-        enviar_telegram("❌ Erro ao conectar")
+        enviar_telegram("❌ Erro ao conectar na IQ Option.")
         return
     api.change_balance(TIPO_CONTA)
     enviar_telegram(f"✅ Sala de Sinais Iniciada - {TIPO_CONTA}")
