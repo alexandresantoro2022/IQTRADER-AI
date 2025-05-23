@@ -10,15 +10,13 @@ from iqoptionapi.stable_api import IQ_Option
 # ========== CONFIGURAÇÕES ==========
 EMAIL = "alexandresantoroalves@hotmail.com"
 SENHA = "A1l2e3-*@"
-# ========== ATIVOS ==========
-# Busca dinâmicamente todos os ativos digitais disponíveis via API
-ATIVOS = []  # será preenchido em tempo de execução
+ATIVOS = ["EURGBP", "EURUSD", "GBPUSD", "USDJPY"]
 TIPO_CONTA = "REAL"
 VALOR_INICIAL = 5           # Valor de entrada em BRL
-EXPIRACAO = 1               # Expiração em minutos
+EXPIRACAO = 1               # minutos
 PERIODO_CANDLE = 60         # Duração do candle em segundos
 GALE_MAX = 1
-# Parâmetros de EMAs
+# Parâmetros de EMAs clássicos
 PERIOD_EMAA = 5
 PERIOD_EMAB = 13
 PERIOD_EMAC = 34
