@@ -23,42 +23,10 @@ PERIOD_EMAC = 34
 PERIOD_EMAD = 89
 
 # ========== TELEGRAM ==========
-
-# ========= BUSCA DINÂMICA DE ATIVOS ==========
-def pegar_ativos_disponiveis(api):
-    """Retorna lista de códigos de todos os ativos digitais disponíveis."""
-    try:
-        data = api.get_all_profit()
-        activos = list(data.get('digital', {}).keys())
-        print(f"[INFO] Ativos digitais disponíveis: {activos}")
-        return activos
-    except Exception as e:
-        print(f"[ERROR] Não foi possível buscar ativos: {e}")
-        return []
-
-# ========== TELEGRAM ==========
-TELEGRAM_TOKEN = "6658940055:AAF33sglHPsVkKeqJuyckctjq__Ff5oSGeg"
+TELEGRAM_TOKEN = "6658940055:AAF33sglHPsVkKeqJuyckctjq__Wf5oSGeg"
 CHAT_ID = "-1002664609130"
 
-# ========== MODELO DE IA ==========
-try:
-    model = joblib.load('model.pkl')
-    ia_ativa = True
-    print("✅ IA carregada com sucesso.")
-except FileNotFoundError:
-    ia_ativa = False
-    print("⚠️ model.pkl não encontrado; IA desativada.")
-    class DummyModel:
-        def predict(self, feats):
-            return [None]
-    model = DummyModel()
-
-# ========== ESTATÍSTICAS ==========
-estatisticas = {"wins":0, "losses":0, "sequencia_wins":0, "maior_sequencia":0}
-
-# ========== UTILITÁRIOS ==========
 def enviar_telegram(msg):
-    print(f"[TELEGRAM] {msg}")  # log no console
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     data = {"chat_id": CHAT_ID, "text": msg, "parse_mode": "Markdown"}
     try:
@@ -67,165 +35,84 @@ def enviar_telegram(msg):
     except Exception as e:
         print("Erro ao enviar telegram:", e)
 
-# Checa se ativo está aberto
+# ========== UTILITÁRIOS ==========
+def media_exponencial(valores, periodo):
+    pesos = [2/(periodo+1)*(1-2/(periodo+1))**i for i in range(periodo)]
+    pesos.reverse()
+    return sum(a*b for a,b in zip(valores[-periodo:], pesos))
 
-def esta_aberto(api, ativo):
-    """
-    Verifica se o ativo está aberto para negociação no momento atual.
-    Ajusta timestamps em ms/seg e mostra sessões para debug.
-    """
-    try:
-        all_times = api.get_all_open_time()
-        now_sec = time.time()
-        for item in all_times.get('result', []):
-            name = item.get('name')
-            if name != ativo:
-                continue
-            sessions = item.get('sessions', [])
-            print(f"[SESSIONS] {ativo}: {sessions}")
-            for session in sessions:
-                # API pode retornar ms ou sec
-                start = session.get('start_timestamp') or session.get('open')
-                end = session.get('end_timestamp') or session.get('close')
-                if start is None or end is None:
-                    continue
-                # corrige unidade ms->s
-                if start > 1e12:
-                    start /= 1000.0
-                if end > 1e12:
-                    end /= 1000.0
-                print(f"[SESSION] {ativo}: start={start:.0f}, end={end:.0f}, now={now_sec:.0f}")
-                if start <= now_sec <= end:
-                    print(f"[OPEN] {ativo} está aberto")
-                    return True
-            print(f"[CLOSED] {ativo} sem sessão ativa agora.")
-            return False
-    except Exception as e:
-        print(f"Erro checando horário aberto: {e}")
-    print(f"[WARNING] Ativo {ativo} não encontrado ou sem horários; assumindo aberto")
-    return True
-            print(f"[CLOSED] {ativo} não está em nenhuma sessão ativa agora.")
-            return False
-    except Exception as e:
-        print(f"Erro checando horário aberto: {e}")
-    # se não encontrou o ativo, assume aberto
-    print(f"[WARNING] Não encontrou ativo {ativo} em get_all_open_time; assumindo aberto")
-    return True
-
-# Extrai 4 features para IA: EMAA, EMAB em close e EMAC, EMAD em HLC3
-def extrair_features(candles):
-    closes = np.array([c['close'] for c in candles])
-    hlc3 = np.array([(c['max'] + c['min'] + c['close'])/3 for c in candles])
-    def ema(arr, period):
-        w = 2/(period+1)
-        weights = w * (1-w)**np.arange(period)[::-1]
-        return np.dot(arr[-period:], weights)
-    f1 = ema(closes, PERIOD_EMAA)
-    f2 = ema(closes, PERIOD_EMAB)
-    f3 = ema(hlc3, PERIOD_EMAC)
-    f4 = ema(hlc3, PERIOD_EMAD)
-    print(f"[FEATURES] f1={f1:.4f}, f2={f2:.4f}, f3={f3:.4f}, f4={f4:.4f}")
-    return np.array([f1, f2, f3, f4]).reshape(1, -1)
-
-# Analisa sinal com IA ou fallback simples
+# ========== ANÁLISE ==========
 def analisar_sinais(api, ativo):
     candles = api.get_candles(ativo, PERIODO_CANDLE, 100, time.time())
     candles.reverse()
-    if ia_ativa:
-        feats = extrair_features(candles)
-        pred = model.predict(feats)[0]
-        print(f"[PREDICTION] {ativo} -> {pred}")
-        return pred
-    last = candles[-1]
-    fallback = "call" if last['close'] > last['open'] else "put"
-    print(f"[FALLBACK] {ativo} -> {fallback}")
-    return fallback
+    closes = [c['close'] for c in candles]
+    opens = [c['open'] for c in candles]
+    highs = [c['max'] for c in candles]
+    lows = [c['min'] for c in candles]
+    hlc3 = [(c['max']+c['min']+c['close'])/3 for c in candles]
 
-# Verifica resultado após expiração
+    EMAA = media_exponencial(closes, PERIOD_EMAA)
+    EMAB = media_exponencial(closes, PERIOD_EMAB)
+    EMAC = media_exponencial(hlc3, PERIOD_EMAC)
+    EMAD = media_exponencial(hlc3, PERIOD_EMAD)
+
+    close = closes[-1]
+    open_ = opens[-1]
+    close_1, open_1 = closes[-2], opens[-2]
+    close_2, open_2 = closes[-3], opens[-3]
+    close_3 = closes[-4]
+    high_1, low_1 = highs[-2], lows[-2]
+
+    bull = (close_1<open_1 and close>open_ and close>high_1 and close_2>=open_2)
+    bear = (close_1>open_1 and close<open_ and close<low_1 and close_2<=open_2)
+    if bull:
+        return "call"
+    if bear:
+        return "put"
+    return None
+
+# ========== RESULTADO ==========
 def verificar_resultado(api, ativo, direcao):
-    print(f"[RESULT] esperando expiração de {EXPIRACAO}m para {ativo} {direcao}")
     time.sleep(EXPIRACAO*60)
-    candle = api.get_candles(ativo, PERIODO_CANDLE, 1, time.time())[0]
-    result = "win" if (direcao=="call" and candle['close']>candle['open']) or (direcao=="put" and candle['close']<candle['open']) else "loss"
-    print(f"[RESULT] {ativo} {direcao} -> {result}")
-    return result
+    c = api.get_candles(ativo, PERIODO_CANDLE, 1, time.time())[0]
+    return "win" if (direcao=="call" and c['close']>c['open']) or (direcao=="put" and c['close']<c['open']) else "loss"
 
-# Envia sinal e executa ordem via API
+# ========== ENTRADA ==========
 def enviar_sinal(api, ativo, direcao, gale):
-    if not esta_aberto(api, ativo):
-        enviar_telegram(f"⏰ {ativo} fechado; pulando.")
-        return None
-    now_ts = datetime.datetime.now()
-    hora = (now_ts + datetime.timedelta(minutes=1)).strftime("%H:%M")
+    hora = (datetime.datetime.now()+datetime.timedelta(minutes=1)).strftime("%H:%M")
     tag = "🟢 ENTRADA" if gale==0 else f"🔁 GALE {gale}"
     enviar_telegram(f"{tag}\n🎯 Ativo: `{ativo}`\n📈 Direção: *{direcao.upper()}*\n🕒 Entrada: {hora}\n🌀 Expiração: {EXPIRACAO}min")
     for t in range(3):
         ok, resp = api.buy_digital_spot(ativo, VALOR_INICIAL, direcao, EXPIRACAO)
-        msg = resp.get('message','') if isinstance(resp, dict) else ''
-        print(f"[ORDER] tentativa {t+1}, ok={ok}, msg={msg or resp}")
         if ok:
             enviar_telegram(f"🎫 Ordem ID: `{resp}`")
             break
-        if 'rejected' in msg.lower():
-            enviar_telegram(f"🚫 Risco: {msg}")
-            return None
-        enviar_telegram(f"⏱️ Timeout {t+1}/3")
         time.sleep(1)
     else:
-        enviar_telegram(f"⚠️ Falha ordem: {msg or resp}")
+        enviar_telegram("⚠️ Falha ao executar ordem")
         return False
-    resultado = verificar_resultado(api, ativo, direcao)
-    enviar_telegram("✅ WIN" if resultado=="win" else "❌ LOSS")
-    return resultado=="win"
 
-# Processa sinal principal e gales
+    res = verificar_resultado(api, ativo, direcao)
+    enviar_telegram("✅ WIN" if res=="win" else "❌ LOSS")
+    return res=="win"
+
+# ========== FLUXO PRINCIPAL ==========
 def processar_sinal(api, ativo, direcao):
-    print(f"[PROCESS] iniciando para {ativo} {direcao}")
-    r = enviar_sinal(api, ativo, direcao, 0)
-    if r is None: return
-    if r:
-        estatisticas['wins']+=1; estatisticas['sequencia_wins']+=1
-        estatisticas['maior_sequencia']=max(estatisticas['maior_sequencia'],estatisticas['sequencia_wins'])
+    win = enviar_sinal(api, ativo, direcao, 0)
+    if win:
         enviar_telegram("✅ *SINAL FINALIZADO COM WIN*")
     else:
-        estatisticas['losses']+=1; estatisticas['sequencia_wins']=0
-        for g in range(1,GALE_MAX+1):
-            r2=enviar_sinal(api, ativo, direcao, g)
-            if r2 is None: return
-            if r2:
-                estatisticas['wins']+=1; estatisticas['sequencia_wins']+=1
-                enviar_telegram("✅ *SINAL FINALIZADO COM WIN*")
-                break
-            else:
-                estatisticas['losses']+=1; estatisticas['sequencia_wins']=0
-                if g==GALE_MAX: enviar_telegram("❌ *SINAL FINALIZADO COM LOSS TOTAL*")
-    st = (
-        f"📊 *ESTATÍSTICAS*\n"
-        f"✅ Wins: {estatisticas['wins']}\n"
-        f"❌ Losses: {estatisticas['losses']}\n"
-        f"🔥 Seq: {estatisticas['sequencia_wins']}\n"
-        f"🏆 Max Seq: {estatisticas['maior_sequencia']}"
-    )
-    enviar_telegram(st)
+        enviar_telegram("❌ *SINAL FINALIZADO COM LOSS TOTAL*")
 
-# Main
+# ========== MAIN ==========
 def main():
-    print(f"▶️ Iniciando bot em {datetime.datetime.now().isoformat()}")
     api = IQ_Option(EMAIL, SENHA)
-    print("[API] Conectando...")
     api.connect()
     if not api.check_connect():
-        enviar_telegram("❌ Erro conexão")
+        enviar_telegram("❌ Erro ao conectar")
         return
     api.change_balance(TIPO_CONTA)
-    # Preenche lista de ativos dinamicamente
-    ativos_disponiveis = pegar_ativos_disponiveis(api)
-    if not ativos_disponiveis:
-        enviar_telegram("⚠️ Nenhum ativo digital disponível encontrado; saindo.")
-        return
-    global ATIVOS
-    ATIVOS = ativos_disponiveis
-    enviar_telegram(f"✅ Sala AI Iniciada - {TIPO_CONTA}")
+    enviar_telegram(f"✅ Sala de Sinais Iniciada - {TIPO_CONTA}")
     while True:
         for ativo in ATIVOS:
             direcao = analisar_sinais(api, ativo)
